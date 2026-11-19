@@ -69,7 +69,7 @@
   --surface-4: #243142;
 
   --line: #1a2432;
-  --line-2: #26324300;
+  --line-2: #263243;
   --line-strong: #2c3a4d;
 
   --text: #eaf0f7;
@@ -183,6 +183,24 @@ code, .mono {
   font-family: var(--font-mono);
   letter-spacing: .02em;      /* 等宽字体加一点字距，密集字符更易分辨 */
   font-variant-ligatures: none;  /* 关掉连字，避免 != 变成 ≠ 这类干扰 */
+}
+
+/* ============================================================
+   兼容别名：部分页面（诊断/报文/会话详情/任务/设置/媒体）使用了旧变量名，
+   此前未定义，导致面板透明、无边框、错误框无底色。
+   统一映射到现有设计令牌，随明暗主题自动切换。
+   ============================================================ */
+:root {
+  --panel: var(--surface);
+  --panel-2: var(--surface-2);
+  --panel-3: var(--surface-3);
+  --border: var(--line-2);
+  --border-2: var(--line-strong);
+  --accent: var(--brand);
+  --accent-bg: var(--brand-soft);
+  --critical-bg: var(--critical-soft);
+  --warning-bg: var(--warning-soft);
+  --info-bg: var(--info-soft);
 }
 
 /* ============================================================

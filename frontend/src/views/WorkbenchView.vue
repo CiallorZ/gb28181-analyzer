@@ -103,10 +103,16 @@ function splitCommon() {
 }
 
 /* ---------------- 数据加载 ---------------- */
+let loadSeq = 0
 async function loadAll() {
   if (!store.currentTaskId) return
+  const seq = ++loadSeq
+  const tid = store.currentTaskId
+  const stale = () => seq !== loadSeq || tid !== store.currentTaskId
   try {
-    task.value = await store.loadTask()
+    const t = await store.loadTask(tid)
+    if (stale()) return          // 期间已切换任务：丢弃旧响应，避免覆盖新任务
+    task.value = t
     if (task.value.status !== 'completed') return
     const [ov, ss, dg, pk] = await Promise.all([
       api.overview(store.currentTaskId),
@@ -385,15 +391,34 @@ function onPick(e) {
   e.target.value = ''
 }
 
+const reanalyzing = ref(false)
+async function reanalyze() {
+  if (!store.currentTaskId || reanalyzing.value) return
+  reanalyzing.value = true
+  err.value = ''
+  try {
+    await api.analyze(store.currentTaskId)
+    task.value = await store.loadTask()
+    startPoll()
+  } catch (e) {
+    err.value = e.message
+  } finally {
+    reanalyzing.value = false
+  }
+}
+
 function reset() {
   stopPoll()
   store.setCurrent(null)
+  loadSeq++                     // 作废在途的加载请求
   task.value = null
   overview.value = null
   sessions.value = []
   diagnostics.value = []
   streams.value = []
   packets.value = []
+  // 若停留在 /tasks/:id，回到工作台首页，避免 URL 与页面状态不一致
+  if (router.currentRoute.value.name === 'task') router.replace('/')
 }
 
 // 分析步骤（与后端 stage 百分比对齐）
@@ -655,6 +680,16 @@ watch(openSections, () => nextTick(renderCharts), { deep: true })
         <div class="mt-10">{{ task.error_message || '未知错误' }}</div>
       </div>
       <button class="btn mt-14" @click="reset">重新上传</button>
+    </div>
+
+    <!-- ==================== 已取消 ==================== -->
+    <div v-else-if="task.status === 'cancelled'" class="fail-wrap">
+      <div class="info-box">
+        <strong>分析已取消</strong>
+        <div class="mt-10">已保留上传文件，可重新分析；如不需要，可新建分析。</div>
+      </div>
+      <button class="btn mt-14" :disabled="reanalyzing" @click="reanalyze">重新分析</button>
+      <button class="btn mt-14" style="margin-left:8px" @click="reset">新建分析</button>
     </div>
 
     <!-- ==================== 结果瀑布 ==================== -->
