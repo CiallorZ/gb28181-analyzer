@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 
 from ..core.config import settings
 from ..core.db import SessionLocal, get_db, session_scope
+from ..core.security import looks_like_capture
 from ..models.entities import (
     AnalysisTask, CaptureFile, DiagnosticEvent, TaskStatus, BusinessSession,
     MediaStream,
@@ -50,10 +51,18 @@ async def upload_file(file: UploadFile = File(...),
     sha = hashlib.sha256()
     try:
         with open(dest, 'wb') as out:
+            first = True
             while True:
                 chunk = await file.read(1 << 20)
                 if not chunk:
                     break
+                if first:
+                    first = False
+                    # 文件头不是 pcap/pcapng 魔数就别往下写，避免落盘垃圾数据
+                    if not looks_like_capture(chunk):
+                        raise HTTPException(
+                            400, '文件内容不是有效的 pcap/pcapng 抓包文件'
+                                 '（文件头魔数不匹配）')
                 size += len(chunk)
                 if size > limit:
                     raise HTTPException(413, '文件超过 %d MB 上限'

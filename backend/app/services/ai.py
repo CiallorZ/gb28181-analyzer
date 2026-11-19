@@ -17,11 +17,20 @@ import urllib.error
 import urllib.request
 
 from ..core.config import settings
+from ..core.security import validate_ai_base_url
 from ..models.entities import (
     AnalysisTask, BusinessSession, DiagnosticEvent, MediaStream, SipMessage,
 )
 
 DEFAULT_BASE = 'https://api.deepseek.com'
+
+
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    """不跟随重定向：urllib 默认会把 Authorization 头带到重定向目标，
+    若网关（或其被劫持后）返回 30x，就会把 API Key 送给第三方。"""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
 DEFAULT_MODEL = 'deepseek-chat'
 AI_TIMEOUT = 180
 CONFIG_PATH = settings.DATA_DIR / 'ai_config.json'
@@ -43,16 +52,27 @@ def load_config() -> dict:
 
 
 def save_config(cfg: dict) -> None:
+    """原子写入，文件权限 0600（含 API Key，避免同机其他用户读取）"""
     tmp = str(CONFIG_PATH) + '.tmp'
-    with open(tmp, 'w', encoding='utf-8') as f:
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, 'w', encoding='utf-8') as f:
         json.dump(cfg, f, ensure_ascii=False, indent=2)
+    try:
+        os.chmod(tmp, 0o600)      # 临时文件已存在时 os.open 的 mode 不生效
+    except OSError:
+        pass                      # Windows 等不支持 POSIX 权限的平台
     os.replace(tmp, CONFIG_PATH)
+
+
+def _api_key(cfg: dict) -> str:
+    """优先使用环境变量 DEEPSEEK_API_KEY（不落盘），其次配置文件"""
+    return (os.environ.get('DEEPSEEK_API_KEY') or cfg.get('api_key') or '').strip()
 
 
 def public_config() -> dict:
     """给前端的配置（key 脱敏）"""
     cfg = load_config()
-    key = cfg.get('api_key') or ''
+    key = _api_key(cfg)
     hint = ''
     if key:
         hint = '****' + key[-4:] if len(key) > 8 else '****'
@@ -231,11 +251,16 @@ MAX_HISTORY = 12
 # ---------------------------------------------------------------
 def _post(body: dict, on_delta=None) -> str:
     cfg = load_config()
-    key = (cfg.get('api_key') or '').strip()
+    key = _api_key(cfg)
     if not key:
         raise RuntimeError('尚未配置 DeepSeek API Key')
 
-    url = (cfg.get('base_url') or DEFAULT_BASE).rstrip('/') + '/chat/completions'
+    # 发送前再校验一次：配置文件可能是旧版本写入、或被手工改过
+    try:
+        base = validate_ai_base_url(cfg.get('base_url') or DEFAULT_BASE)
+    except ValueError as e:
+        raise RuntimeError('AI 网关地址不安全，已拒绝发送：%s' % e)
+    url = base + '/chat/completions'
     data = json.dumps(body, ensure_ascii=False).encode('utf-8')
     req = urllib.request.Request(url, data=data, method='POST')
     req.add_header('Content-Type', 'application/json')
@@ -243,8 +268,10 @@ def _post(body: dict, on_delta=None) -> str:
     req.add_header('Accept', 'text/event-stream' if on_delta else 'application/json')
 
     try:
-        resp = urllib.request.urlopen(req, timeout=AI_TIMEOUT,
-                                      context=ssl.create_default_context())
+        opener = urllib.request.build_opener(
+            _NoRedirect(),
+            urllib.request.HTTPSHandler(context=ssl.create_default_context()))
+        resp = opener.open(req, timeout=AI_TIMEOUT)
     except urllib.error.HTTPError as e:
         detail = ''
         try:

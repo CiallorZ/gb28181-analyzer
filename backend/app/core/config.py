@@ -7,7 +7,7 @@ import os
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent   # backend/
-PROJECT_DIR = BASE_DIR.parent                              # newapp/
+PROJECT_DIR = BASE_DIR.parent                              # 仓库根目录
 
 
 def _env(key: str, default: str) -> str:
@@ -55,6 +55,13 @@ class Settings:
     TSHARK_PATH: str = _env('TSHARK_PATH', '')
     FFMPEG_PATH: str = _env('FFMPEG_PATH', '')
 
+    # Host 头白名单（逗号分隔，'*' 表示不限制）。
+    # 默认：仅监听本机时只接受本机 Host；对外监听(HOST=0.0.0.0)时不限制，
+    # 暴露到网络前请显式设置，例如 ALLOWED_HOSTS=analyzer.example.com
+    ALLOWED_HOSTS: list = [
+        h.strip() for h in os.environ['ALLOWED_HOSTS'].split(',') if h.strip()
+    ] if os.environ.get('ALLOWED_HOSTS') else None   # None=按 HOST 取默认
+
     # CORS（前端 dev server）
     CORS_ORIGINS: list = _env(
         'CORS_ORIGINS',
@@ -63,6 +70,9 @@ class Settings:
 
 
 settings = Settings()
+if settings.ALLOWED_HOSTS is None:
+    from .security import default_allowed_hosts
+    settings.ALLOWED_HOSTS = default_allowed_hosts(settings.HOST)
 
 for d in (settings.DATA_DIR, settings.UPLOAD_DIR,
           settings.REBUILD_DIR, settings.REPORT_DIR):

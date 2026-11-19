@@ -255,6 +255,12 @@ RTP 载荷 → PS (Pack/PES) → ES (NAL) → H.264/H.265 → MP4
 - 只发送**解析后的结构化摘要**（会话、流、诊断结论）
 - **绝不发送抓包原始字节**
 - Key 不回传前端明文（只给 `****末四位`）
+- Key 可用环境变量 `DEEPSEEK_API_KEY` 提供（优先于配置文件，不落盘）；落盘的
+  `data/ai_config.json` 权限为 0600（POSIX；Windows 不支持权限位，请自行限制目录访问）
+- **网关地址白名单**：API Key 会随请求发往 `base_url` 指向的主机，因此默认只允许
+  `https://api.deepseek.com`。使用其他 OpenAI 兼容网关需在服务端设置
+  `AI_BASE_URL_ALLOWLIST=host1,host2` 后重启；明文 http 另需 `AI_ALLOW_INSECURE_HTTP=1`。
+  请求不跟随重定向，避免 Key 被带到第三方
 
 ### 模型兼容性（踩过的坑）
 
@@ -268,6 +274,24 @@ RTP 载荷 → PS (Pack/PES) → ES (NAL) → H.264/H.265 → MP4
 ```
 
 关闭后 thinking 模式也不支持 `temperature` 等采样参数，故不传这些字段。
+
+## 部署安全说明
+
+本服务**没有账号体系**，定位是本机或可信内网的单用户工具。
+
+| 机制 | 行为 | 相关配置 |
+|---|---|---|
+| Host 头校验 | 仅监听本机（默认 `HOST=127.0.0.1`）时，只接受 `localhost` / `127.0.0.1` 作为 Host，防 DNS rebinding；对外监听时不限制 | `ALLOWED_HOSTS=a.example.com,b.example.com` |
+| Origin 校验 | 带 `Origin` 的 POST/PUT/PATCH/DELETE 必须同源或在 CORS 白名单内，防第三方网页发起 CSRF | `CORS_ORIGINS` |
+| 上传校验 | 校验文件头魔数（pcap 微秒/纳秒、pcapng），不符直接 400，不落盘 | — |
+
+经 Nginx 等反向代理对外提供服务时：
+
+- 对外暴露前请设置 `ALLOWED_HOSTS` 为实际域名；
+- 代理需透传 `Host`（`proxy_set_header Host $host;`）并同时设置
+  `X-Forwarded-Host` / `X-Forwarded-Proto`，否则同源判定可能失败，也可把站点
+  来源加入 `CORS_ORIGINS`；
+- **不要**把无认证的服务直接暴露到公网，请在代理层加认证（Basic Auth、SSO 等）。
 
 ## API 一览
 

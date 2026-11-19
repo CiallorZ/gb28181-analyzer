@@ -28,6 +28,10 @@ os.environ['KEEP_DAYS'] = '0'
 os.environ['DISK_BUDGET_MB'] = '100000'
 os.environ['MAX_CONCURRENT_TASKS'] = '2'
 os.environ['KEEP_UPLOADS'] = '1'
+os.environ['ALLOWED_HOSTS'] = 'testserver,localhost,127.0.0.1'   # TestClient 的 Host 为 testserver
+os.environ.pop('AI_BASE_URL_ALLOWLIST', None)
+os.environ.pop('AI_ALLOW_INSECURE_HTTP', None)
+os.environ.pop('DEEPSEEK_API_KEY', None)
 
 FIXTURES = Path(__file__).resolve().parent / 'fixtures'
 

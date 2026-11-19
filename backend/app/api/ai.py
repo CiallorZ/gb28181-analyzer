@@ -11,6 +11,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from ..core.db import get_db
+from ..core.security import validate_ai_base_url
 from ..models.entities import AnalysisTask
 from ..services import ai
 
@@ -46,7 +47,11 @@ def set_config(body: ConfigIn):
     if body.model is not None:
         cfg['model'] = body.model.strip() or ai.DEFAULT_MODEL
     if body.base_url is not None:
-        cfg['base_url'] = body.base_url.strip() or ai.DEFAULT_BASE
+        try:
+            cfg['base_url'] = (validate_ai_base_url(body.base_url)
+                               if body.base_url.strip() else ai.DEFAULT_BASE)
+        except ValueError as e:
+            raise HTTPException(400, str(e))
     ai.save_config(cfg)
     return ai.public_config()
 
